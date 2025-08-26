@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabase"
 import './index.css'
 
+// 👇 Correos con permiso para ver la pestaña "Resultados"
+const ADMIN_EMAILS = ["gghermosa@uce.edu.ec"];
+
 const DIMENSIONS = [
   { id: "didactica", name: "Didáctica y claridad", qs: ["q1","q2"] },
   { id: "comunicacion", name: "Comunicación y respeto", qs: ["q3","q4"] },
@@ -100,10 +103,11 @@ function AuthGate({ onReady }) {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
+      if (data.session) onReady?.(data.session); // ← avisar a App con la sesión
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, sess) => {
       setSession(sess);
-      if (sess) onReady?.(sess);
+      if (sess) onReady?.(sess); // ← avisar a App cuando inicia sesión
     });
     return () => sub.subscription.unsubscribe();
   }, [onReady]);
@@ -158,6 +162,9 @@ export default function App() {
   const [subs, setSubs] = useState([]);
   const [stats, setStats] = useState({ count: 0, overall: null, perQ: {}, perDim: {} });
 
+  // 👇 nuevo: control de visibilidad para admins
+  const [isAdmin, setIsAdmin] = useState(false);
+
   useEffect(() => { fetchStats(); }, []);
 
   function average(...nums) {
@@ -167,16 +174,21 @@ export default function App() {
   }
 
   async function fetchStats() {
-    // consulta a vista agregada si existe; si no, nada (se puede extender)
     try {
       const { data, error } = await supabase.from('evaluaciones_view').select('*');
       if (!error && data) {
-        // Espera columnas: profesor, curso, modalidad, count, avg_general, didactica_avg, ...
-        // Para MVP, solo contamos total
         const total = data.reduce((a,b)=>a + (b.count || 0), 0);
         setStats(s => ({ ...s, count: total }));
       }
     } catch {}
+  }
+
+  // ⬇️ se ejecuta cuando AuthGate confirma sesión
+  function handleAuthReady(sess) {
+    const email = sess?.user?.email || "";
+    const admin = ADMIN_EMAILS.includes(email);
+    setIsAdmin(admin);
+    if (admin) fetchStats(); // solo cargar stats a admins
   }
 
   async function handleSubmit(e) {
@@ -212,11 +224,15 @@ export default function App() {
         <p className="text-sm text-gray-600">Autenticación obligatoria con correo institucional. Datos guardados en Supabase (free tier).</p>
       </header>
 
-      <AuthGate onReady={()=>fetchStats()} />
+      {/* ahora pasamos la sesión al manejador */}
+      <AuthGate onReady={handleAuthReady} />
 
       <div className="mb-4 flex gap-2">
         <button onClick={()=>setTab("responder")} className={`rounded-full px-4 py-2 text-sm ${tab==='responder'?'bg-gray-900 text-white':'bg-gray-100'}`}>Responder</button>
-        <button onClick={()=>setTab("resultados")} className={`rounded-full px-4 py-2 text-sm ${tab==='resultados'?'bg-gray-900 text-white':'bg-gray-100'}`}>Resultados</button>
+        {/* 👇 Mostrar "Resultados" solo a admins */}
+        {isAdmin && (
+          <button onClick={()=>setTab("resultados")} className={`rounded-full px-4 py-2 text-sm ${tab==='resultados'?'bg-gray-900 text-white':'bg-gray-100'}`}>Resultados</button>
+        )}
       </div>
 
       {tab === 'responder' && (
@@ -227,7 +243,7 @@ export default function App() {
                 <label className="mb-1 block text-sm font-medium">Docente</label>
                 <select value={profesor} onChange={e=>setProfesor(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
                   <option value="">Selecciona…</option>
-                  {profes.map(p=> <option key={p} value={p}>{p}</option>)}
+                  {DEFAULT_PROFES.map(p=> <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
               <div>
@@ -247,48 +263,4 @@ export default function App() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-              <Pill>Autenticado: @uce.edu.ec</Pill>
-              <Pill>Escala: 1–5 y N/A</Pill>
-              <Pill>Uso: mejora académica</Pill>
-            </div>
-          </Section>
-
-          <Section title="Cuestionario">
-            {QUESTIONS.map((q, idx)=> (
-              <LikertRow key={q.id} idx={idx+1} q={q} value={answers[q.id] ?? null} onChange={(v)=>setAnswers(a=>({...a,[q.id]:v}))} />
-            ))}
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium">Lo mejor de este curso/docente</label>
-                <textarea value={commentBest} onChange={e=>setCommentBest(e.target.value)} className="h-24 w-full rounded-lg border border-gray-300 p-2" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Aspectos por mejorar</label>
-                <textarea value={commentImprove} onChange={e=>setCommentImprove(e.target.value)} className="h-24 w-full rounded-lg border border-gray-300 p-2" />
-              </div>
-            </div>
-
-            <div className="mt-5 flex items-center justify-between">
-              <div className="text-xs text-gray-500">Se usará solo de forma agregada.</div>
-              <button type="submit" className="rounded-xl bg-gray-900 px-5 py-2 text-white hover:bg-black">Enviar evaluación</button>
-            </div>
-          </Section>
-        </form>
-      )}
-
-      {tab === 'resultados' && (
-        <div className="space-y-5">
-          <Section title="Resumen">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <div className="rounded-xl border p-4">
-                <div className="text-sm text-gray-500">Respuestas (total)</div>
-                <div className="text-2xl font-bold">{stats.count}</div>
-              </div>
-            </div>
-          </Section>
-          <Section title="(Opcional) Conectar a vista agregada en Supabase para promedios" />
-        </div>
-      )}
-    </div>
-  );
-}
+              <Pill>Autenticado: @uce.
