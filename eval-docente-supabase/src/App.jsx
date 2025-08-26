@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { supabase } from "./supabase"
-import './index.css'
+import React, { useEffect, useState } from "react";
+import { supabase } from "./supabase";
+import "./index.css";
 
-// 👇 Correos con permiso para ver la pestaña "Resultados"
+// 👇 Solo estos correos ven la pestaña "Resultados"
 const ADMIN_EMAILS = ["gghermosa@uce.edu.ec"];
 
 const DIMENSIONS = [
@@ -77,20 +77,6 @@ function LikertRow({ idx, q, value, onChange }) {
     </div>
   );
 }
-function StatBar({ label, value }) {
-  const pct = Math.max(0, Math.min(100, (value ?? 0) * 20)); // 5 -> 100%
-  return (
-    <div className="mb-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-700">{label}</span>
-        <span className="text-sm font-semibold">{value ? value.toFixed(2) : '–'}</span>
-      </div>
-      <div className="mt-1 h-2 w-full rounded-full bg-gray-100">
-        <div className="h-2 rounded-full bg-gray-800" style={{ width: pct + '%'}} />
-      </div>
-    </div>
-  );
-}
 
 function AuthGate({ onReady }) {
   const [email, setEmail] = useState("");
@@ -103,11 +89,11 @@ function AuthGate({ onReady }) {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
-      if (data.session) onReady?.(data.session); // ← avisar a App con la sesión
+      if (data.session) onReady?.(data.session);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, sess) => {
       setSession(sess);
-      if (sess) onReady?.(sess); // ← avisar a App cuando inicia sesión
+      if (sess) onReady?.(sess);
     });
     return () => sub.subscription.unsubscribe();
   }, [onReady]);
@@ -138,129 +124,4 @@ function AuthGate({ onReady }) {
     </div>
   );
   return (
-    <form onSubmit={signInWithEmail} className="mb-4 rounded-xl border bg-white p-4">
-      <div className="mb-2 text-sm font-medium">Accede con tu correo institucional</div>
-      <div className="flex gap-2">
-        <input type="email" required placeholder="tuusuario@uce.edu.ec" value={email} onChange={e=>setEmail(e.target.value)} className="w-full rounded-lg border p-2" />
-        <button className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">{magicSent? "Revisa tu correo" : "Enviar enlace"}</button>
-      </div>
-      <div className="mt-2 text-xs text-gray-500">Se enviará un enlace mágico; abre desde este mismo dispositivo.</div>
-    </form>
-  );
-}
-
-export default function App() {
-  const [tab, setTab] = useState("responder");
-  const [profes, setProfes] = useState(DEFAULT_PROFES);
-  const [cursos, setCursos] = useState(["Todos", ...DEFAULT_COURSES]);
-  const [profesor, setProfesor] = useState("");
-  const [curso, setCurso] = useState("");
-  const [modalidad, setModalidad] = useState("Presencial");
-  const [answers, setAnswers] = useState({});
-  const [commentBest, setCommentBest] = useState("");
-  const [commentImprove, setCommentImprove] = useState("");
-  const [subs, setSubs] = useState([]);
-  const [stats, setStats] = useState({ count: 0, overall: null, perQ: {}, perDim: {} });
-
-  // 👇 nuevo: control de visibilidad para admins
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => { fetchStats(); }, []);
-
-  function average(...nums) {
-    const vals = nums.filter(n => typeof n === 'number');
-    if (!vals.length) return null;
-    return Number((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2));
-  }
-
-  async function fetchStats() {
-    try {
-      const { data, error } = await supabase.from('evaluaciones_view').select('*');
-      if (!error && data) {
-        const total = data.reduce((a,b)=>a + (b.count || 0), 0);
-        setStats(s => ({ ...s, count: total }));
-      }
-    } catch {}
-  }
-
-  // ⬇️ se ejecuta cuando AuthGate confirma sesión
-  function handleAuthReady(sess) {
-    const email = sess?.user?.email || "";
-    const admin = ADMIN_EMAILS.includes(email);
-    setIsAdmin(admin);
-    if (admin) fetchStats(); // solo cargar stats a admins
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const user = (await supabase.auth.getUser()).data.user;
-    if (!user) { alert("Inicia sesión con tu correo institucional."); return; }
-    if (!profesor || !curso) { alert("Selecciona docente y curso."); return; }
-
-    const row = {
-      user_id: user.id,
-      profesor,
-      curso,
-      modalidad,
-      q1: answers.q1 ?? null, q2: answers.q2 ?? null, q3: answers.q3 ?? null, q4: answers.q4 ?? null,
-      q5: answers.q5 ?? null, q6: answers.q6 ?? null, q7: answers.q7 ?? null, q8: answers.q8 ?? null,
-      q9: answers.q9 ?? null, q10: answers.q10 ?? null, q11: answers.q11 ?? null, q12: answers.q12 ?? null,
-      comment_best: commentBest.trim(),
-      comment_improve: commentImprove.trim(),
-    };
-
-    const { error } = await supabase.from('evaluaciones').insert(row);
-    if (error) { alert(error.message); return; }
-
-    setAnswers({}); setCommentBest(""); setCommentImprove("");
-    setTab("resultados");
-    fetchStats();
-  }
-
-  return (
-    <div className="mx-auto max-w-5xl p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold">Evaluación Docente – FCA</h1>
-        <p className="text-sm text-gray-600">Autenticación obligatoria con correo institucional. Datos guardados en Supabase (free tier).</p>
-      </header>
-
-      {/* ahora pasamos la sesión al manejador */}
-      <AuthGate onReady={handleAuthReady} />
-
-      <div className="mb-4 flex gap-2">
-        <button onClick={()=>setTab("responder")} className={`rounded-full px-4 py-2 text-sm ${tab==='responder'?'bg-gray-900 text-white':'bg-gray-100'}`}>Responder</button>
-        {/* 👇 Mostrar "Resultados" solo a admins */}
-        {isAdmin && (
-          <button onClick={()=>setTab("resultados")} className={`rounded-full px-4 py-2 text-sm ${tab==='resultados'?'bg-gray-900 text-white':'bg-gray-100'}`}>Resultados</button>
-        )}
-      </div>
-
-      {tab === 'responder' && (
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <Section title="Datos básicos (anónimo para la clase, autenticado para evitar duplicados)">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium">Docente</label>
-                <select value={profesor} onChange={e=>setProfesor(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
-                  <option value="">Selecciona…</option>
-                  {DEFAULT_PROFES.map(p=> <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Curso</label>
-                <select value={curso} onChange={e=>setCurso(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
-                  <option value="">Selecciona…</option>
-                  {DEFAULT_COURSES.map(c=> <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">Modalidad</label>
-                <select value={modalidad} onChange={e=>setModalidad(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
-                  <option>Presencial</option>
-                  <option>Distancia</option>
-                  <option>Híbrida</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-              <Pill>Autenticado: @uce.
+    <form onSubmit={signInWithEmail} className="mb-4 rounded-xl border bg-white
