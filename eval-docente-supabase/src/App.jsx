@@ -5,6 +5,11 @@ import "./index.css";
 // 👇 Solo estos correos ven la pestaña "Resultados"
 const ADMIN_EMAILS = ["gghermosa@uce.edu.ec"];
 
+// 👇 Redirección fija para el enlace mágico (prod vs local)
+const REDIRECT_TO = import.meta.env.PROD
+  ? "https://eval-docente-supabase-mclr.vercel.app"
+  : "http://localhost:5173";
+
 const DIMENSIONS = [
   { id: "didactica", name: "Didáctica y claridad", qs: ["q1","q2"] },
   { id: "comunicacion", name: "Comunicación y respeto", qs: ["q3","q4"] },
@@ -105,7 +110,10 @@ function AuthGate({ onReady }) {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin } });
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: REDIRECT_TO }, // 👈 cambio clave
+    });
     setLoading(false);
     if (error) alert(error.message);
     else setMagicSent(true);
@@ -128,7 +136,9 @@ function AuthGate({ onReady }) {
       <div className="mb-2 text-sm font-medium">Accede con tu correo institucional</div>
       <div className="flex gap-2">
         <input type="email" required placeholder="tuusuario@uce.edu.ec" value={email} onChange={e=>setEmail(e.target.value)} className="w-full rounded-lg border p-2" />
-        <button className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">{magicSent? "Revisa tu correo" : "Enviar enlace"}</button>
+        <button className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">
+          {magicSent? "Revisa tu correo" : "Enviar enlace"}
+        </button>
       </div>
       <div className="mt-2 text-xs text-gray-500">Se enviará un enlace mágico; abre desde este mismo dispositivo.</div>
     </form>
