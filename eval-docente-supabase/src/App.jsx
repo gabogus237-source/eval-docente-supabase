@@ -124,4 +124,161 @@ function AuthGate({ onReady }) {
     </div>
   );
   return (
-    <form onSubmit={signInWithEmail} className="mb-4 rounded-xl border bg-white
+    <form onSubmit={signInWithEmail} className="mb-4 rounded-xl border bg-white p-4">
+      <div className="mb-2 text-sm font-medium">Accede con tu correo institucional</div>
+      <div className="flex gap-2">
+        <input type="email" required placeholder="tuusuario@uce.edu.ec" value={email} onChange={e=>setEmail(e.target.value)} className="w-full rounded-lg border p-2" />
+        <button className="rounded-lg bg-gray-900 px-4 py-2 text-sm text-white">{magicSent? "Revisa tu correo" : "Enviar enlace"}</button>
+      </div>
+      <div className="mt-2 text-xs text-gray-500">Se enviará un enlace mágico; abre desde este mismo dispositivo.</div>
+    </form>
+  );
+}
+
+export default function App() {
+  const [tab, setTab] = useState("responder");
+  const [profesor, setProfesor] = useState("");
+  const [curso, setCurso] = useState("");
+  const [modalidad, setModalidad] = useState("Presencial");
+  const [answers, setAnswers] = useState({});
+  const [commentBest, setCommentBest] = useState("");
+  const [commentImprove, setCommentImprove] = useState("");
+  const [stats, setStats] = useState({ count: 0 });
+
+  // 🔒 control de admin
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => { /* no cargamos stats hasta saber si es admin */ }, []);
+
+  async function fetchStats() {
+    try {
+      const { data } = await supabase.from('evaluaciones_view').select('*');
+      const total = (data || []).reduce((a,b)=>a + (b.count || 0), 0);
+      setStats({ count: total });
+    } catch {}
+  }
+
+  function handleAuthReady(sess) {
+    const email = sess?.user?.email || "";
+    const admin = ADMIN_EMAILS.includes(email);
+    setIsAdmin(admin);
+    if (admin) fetchStats();
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user) { alert("Inicia sesión con tu correo institucional."); return; }
+    if (!profesor || !curso) { alert("Selecciona docente y curso."); return; }
+
+    const row = {
+      user_id: user.id,
+      profesor,
+      curso,
+      modalidad,
+      q1: answers.q1 ?? null, q2: answers.q2 ?? null, q3: answers.q3 ?? null, q4: answers.q4 ?? null,
+      q5: answers.q5 ?? null, q6: answers.q6 ?? null, q7: answers.q7 ?? null, q8: answers.q8 ?? null,
+      q9: answers.q9 ?? null, q10: answers.q10 ?? null, q11: answers.q11 ?? null, q12: answers.q12 ?? null,
+      comment_best: commentBest.trim(),
+      comment_improve: commentImprove.trim(),
+    };
+
+    const { error } = await supabase.from('evaluaciones').insert(row);
+    if (error) { alert(error.message); return; }
+
+    setAnswers({}); setCommentBest(""); setCommentImprove("");
+    setTab("resultados");
+    if (isAdmin) fetchStats();
+  }
+
+  return (
+    <div className="mx-auto max-w-5xl p-6">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold">Evaluación Docente – FCA</h1>
+        <p className="text-sm text-gray-600">Autenticación obligatoria con correo institucional. Datos guardados en Supabase (free tier).</p>
+      </header>
+
+      <AuthGate onReady={handleAuthReady} />
+
+      <div className="mb-4 flex gap-2">
+        <button onClick={()=>setTab("responder")} className={`rounded-full px-4 py-2 text-sm ${tab==='responder'?'bg-gray-900 text-white':'bg-gray-100'}`}>Responder</button>
+        {isAdmin && (
+          <button onClick={()=>setTab("resultados")} className={`rounded-full px-4 py-2 text-sm ${tab==='resultados'?'bg-gray-900 text-white':'bg-gray-100'}`}>Resultados</button>
+        )}
+      </div>
+
+      {tab === 'responder' && (
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <Section title="Datos básicos (autenticado)">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium">Docente</label>
+                <select value={profesor} onChange={e=>setProfesor(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
+                  <option value="">Selecciona…</option>
+                  {DEFAULT_PROFES.map(p=> <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Curso</label>
+                <select value={curso} onChange={e=>setCurso(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
+                  <option value="">Selecciona…</option>
+                  {DEFAULT_COURSES.map(c=> <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Modalidad</label>
+                <select value={modalidad} onChange={e=>setModalidad(e.target.value)} className="w-full rounded-lg border border-gray-300 p-2">
+                  <option>Presencial</option>
+                  <option>Distancia</option>
+                  <option>Híbrida</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
+              <Pill>Autenticado: @uce.edu.ec</Pill>
+              <Pill>Escala: 1–5 y N/A</Pill>
+              <Pill>Uso: mejora académica</Pill>
+            </div>
+          </Section>
+
+          <Section title="Cuestionario">
+            {QUESTIONS.map((q, idx)=> (
+              <LikertRow key={q.id} idx={idx+1} q={q} value={answers[q.id] ?? null} onChange={(v)=>setAnswers(a=>({...a,[q.id]:v}))} />
+            ))}
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-medium">Lo mejor de este curso/docente</label>
+                <textarea value={commentBest} onChange={e=>setCommentBest(e.target.value)} className="h-24 w-full rounded-lg border border-gray-300 p-2" />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Aspectos por mejorar</label>
+                <textarea value={commentImprove} onChange={e=>setCommentImprove(e.target.value)} className="h-24 w-full rounded-lg border border-gray-300 p-2" />
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between">
+              <div className="text-xs text-gray-500">Se usará solo de forma agregada.</div>
+              <button type="submit" className="rounded-xl bg-gray-900 px-5 py-2 text-white hover:bg-black">Enviar evaluación</button>
+            </div>
+          </Section>
+        </form>
+      )}
+
+      {tab === 'resultados' && isAdmin && (
+        <div className="space-y-5">
+          <Section title="Resumen (solo admins)">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="rounded-xl border p-4">
+                <div className="text-sm text-gray-500">Respuestas (total)</div>
+                <div className="text-2xl font-bold">{stats.count}</div>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-gray-500">
+              Los promedios detallados se leen desde la vista segura <code>evaluaciones_view</code>.
+            </div>
+          </Section>
+        </div>
+      )}
+    </div>
+  );
+}
