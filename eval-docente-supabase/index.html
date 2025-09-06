@@ -4,9 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Evaluación Docente – FCA</title>
+
+    <!-- Redirección: /evaluacion -> /cerrada.html -->
+    <script>
+      (function () {
+        var p = location.pathname;
+        if (p === '/evaluacion' || p.startsWith('/evaluacion/')) {
+          // Si tu app NO está en la raíz del dominio, cambia a: 'cerrada.html'
+          location.replace('/cerrada.html');
+        }
+      })();
+    </script>
   </head>
   <body class="bg-gray-50">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
+
